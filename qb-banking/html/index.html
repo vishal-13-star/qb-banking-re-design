@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>qb-banking</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&display=swap" />
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- BANKING PANEL -->
+        <div class="banking-container" v-show="isBankOpen">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <div class="avatar"></div>
+                    <div class="player-info">
+                        <strong>{{ playerName }}</strong><br>
+                        <small>Cash: <span class="positive-balance">${{ formatCurrency(playerCash) }}</span></small>
+                    </div>
+                </div>
+
+                <div class="sidebar-accounts">
+                    <h4>Your Accounts</h4>
+                    <ul>
+                        <li v-for="account in accounts"
+                            :key="account.name"
+                            :class="{ 'sidebar-selected': account.name === selectedAccountStatement }"
+                            @click="selectAccount(account)">
+                            <span>{{ account.name }}</span>
+                            <span class="positive-balance">${{ formatCurrency(account.balance) }}</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <button class="action-button logout" @click="closeApplication()">Logout</button>
+                <div class="sidebar-footer">Acc. No: {{ accountNumber }}</div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="nav-bar">
+                    <div class="nav-options">
+                        <div class="nav-option" :class="{selected: activeView === 'home'}" @click="setActiveView('home')">🏠 Home</div>
+                        <div class="nav-option" :class="{selected: activeView === 'money'}" @click="setActiveView('money')">💵 Money</div>
+                        <div class="nav-option" :class="{selected: activeView === 'transfer'}" @click="setActiveView('transfer')">💳 Transfer</div>
+                        <div class="nav-option" :class="{selected: activeView === 'accountOptions'}" @click="setActiveView('accountOptions')">⚙️ Account</div>
+                    </div>
+                    <div class="notification-container" v-if="notification">
+                        <div :class="['notification', notification.type]">{{ notification.message }}</div>
+                    </div>
+                </div>
+
+                <!-- Transactions (Bank Statement) -->
+                <div v-if="activeView === 'home'" class="transactions">
+                    <div class="transaction-header">
+                        <span>Date</span>
+                        <span>User</span>
+                        <span>Reason</span>
+                        <span>Amount</span>
+                    </div>
+                    <div v-for="statement in statements[selectedAccountStatement]"
+                         :key="statement.id"
+                         class="transaction-row">
+                        <span>{{ formatDate(statement.date) }}</span>
+                        <span>{{ statement.user }}</span>
+                        <span>{{ statement.reason }}</span>
+                        <span class="amount"
+                              :class="statement.type === 'deposit' ? 'deposit' : 'withdraw'">
+                            <span v-if="statement.type === 'deposit'">⬇️</span>
+                            <span v-else>⬆️</span>
+                            {{ formatCurrency(statement.amount) }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Money View -->
+                <div v-if="activeView === 'money'" class="money">
+                    <div class="manage-money">
+                        <div class="money-title">💵 Money Management</div>
+
+                        <label for="fromAccount">Account:</label>
+                        <select id="fromAccount" v-model="selectedMoneyAccount">
+                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+
+                        <label for="amount">Amount:</label>
+                        <input type="number" id="amount" v-model="selectedMoneyAmount" />
+
+                        <label for="money-reason">Reason:</label>
+                        <input type="text" id="money-reason" v-model="moneyReason" placeholder="Ex: Rent Payment, Deposit, Loan" />
+
+                        <div class="card-buttons">
+                            <button class="action-button" @click="withdrawMoney">Withdraw</button>
+                            <button class="action-button" @click="depositMoney">Deposit</button>
+                        </div>
+                    </div>
+                </div>
+
+                 <div class="transfer-options">
+
+
+                <!-- Transfer View -->
+                <div v-if="activeView === 'transfer'" class="transfer">
+                    <div class="transfer-header">
+                        <div class="nav-option" :class="{selected: transferType === 'internal'}" @click="setTransferType('internal')">Internal</div>
+                        <span class="money-title">Transfer</span>
+                        <div class="nav-option" :class="{selected: transferType === 'external'}" @click="setTransferType('external')">External</div>
+                    </div>
+                    <div v-if="transferType === 'internal'" class="transfer-options">
+                        <label for="internalFrom">Account:</label>
+                        <select id="internalFrom" v-model="internalFromAccount">
+                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="internalTo">Account:</label>
+                        <select id="internalTo" v-model="internalToAccount">
+                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="internalAmount">Amount:</label>
+                        <input type="number" id="internalAmount" v-model="internalTransferAmount" />
+                        <label for="transfer-reason">Reason:</label>
+                        <input type="text" id="transfer-reason" v-model="transferReason" />
+                        <button class="action-button" @click="internalTransfer">Transfer</button>
+                    </div>
+                    <div v-if="transferType === 'external'" class="transfer-options">
+                        <label for="externalAccountNumber">Account Number:</label>
+                        <input type="text" id="externalAccountNumber" v-model="externalAccountNumber" />
+                        <label for="externalFrom">Account:</label>
+                        <select id="externalFrom" v-model="externalFromAccount">
+                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="externalAmount">Amount:</label>
+                        <input type="number" id="externalAmount" v-model="externalTransferAmount" />
+                        <label for="transfer-reason">Reason:</label>
+                        <input type="text" id="transfer-reason" v-model="transferReason" />
+                        <button class="action-button" @click="externalTransfer">Transfer</button>
+                    </div>
+                </div>
+                 </div>
+
+              <div class="content">
+  <!-- Account Options -->
+                <div v-if="activeView === 'accountOptions'" class="account-options">
+    <div class="accordion">
+        <div class="accordion-item" v-for="(section, i) in accountSections" :key="i">
+            <div class="accordion-header" @click="toggleSection(i)">
+                <h4>{{ section.icon }} {{ section.title }}</h4>
+                <span>{{ activeSection === i ? "▲" : "▼" }}</span>
+            </div>
+            <div class="accordion-body" v-show="activeSection === i">
+                <component :is="section.component"></component>
+            </div>
+        </div>
+    </div> 
+                    <div class="debit-card">
+                        <h4>💳 Order Debit Card</h4>
+                        <label for="pin-number">PIN Number</label>
+                        <input type="number" id="pin-number" v-model="debitPin" placeholder="4-digit PIN" />
+                        <div class="card-buttons">
+                            <button class="action-button" @click="orderDebitCard">Order</button>
+                        </div>
+                    </div>
+
+                    <div class="create-account">
+                        <h4>🏦 Open Shared Account</h4>
+                        <label for="createAccountName">Name</label>
+                        <input type="text" id="createAccountName" v-model="createAccountName" placeholder="Ex: Family, Business" />
+                        <label for="createAccountAmount">Initial Deposit</label>
+                        <input type="number" id="createAccountAmount" v-model="createAccountAmount" />
+                        <div class="card-buttons">
+                            <button class="action-button" @click="openAccount">Open Account</button>
+                        </div>
+                    </div>
+
+                    <div class="edit-account">
+                        <h4>⚙️ Manage Shared Account</h4>
+                        <label for="editAccount">Account</label>
+                        <select id="editAccount" v-model="editAccount">
+                            <option v-for="account in accounts.filter(a => a.type === 'shared')" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="editAccountName">Rename</label>
+                        <input type="text" id="editAccountName" v-model="editAccountName" placeholder="New Account Name" />
+                        <div class="card-buttons">
+                            <button class="action-button" @click="deleteAccount">Delete</button>
+                            <button class="action-button" @click="renameAccount">Rename</button>
+                        </div>
+                    </div>
+
+                    <div class="manage-account">
+                        <h4>👥 Manage Account Users</h4>
+                        <label for="manageAccountName">Account</label>
+                        <select id="manageAccountName" v-model="manageAccountName">
+                            <option v-for="account in accounts.filter(a => a.type === 'shared')" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="manageUserName">Citizen ID</label>
+                        <input type="text" id="manageUserName" v-model="manageUserName" placeholder="Search by Citizen ID" @input="filterUsers" @focus="showUsersDropdown = true" @blur="hideDropdown" />
+                        <div class="dropdown-container" v-if="showUsersDropdown">
+                            <div class="list-container">
+                                <ul>
+                                    <li v-for="user in filteredUsers" @click="selectUser(user)">{{ user }}</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="card-buttons">
+                            <button class="action-button" @click="addUserToAccount">Add</button>
+                            <button class="action-button" @click="removeUserFromAccount">Remove</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+         </div>
+
+        <!-- ATM PANEL -->
+        <div class="banking-container" v-show="isATMOpen">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    {{ playerName }}<br />
+                    Cash: <span class="positive-balance">${{ formatCurrency(playerCash) }}</span>
+                </div>
+                <div class="sidebar-accounts">
+                    <ul>
+                        <li v-for="account in accounts" :key="account.name">{{ account.name }}: <span class="positive-balance">${{ formatCurrency(account.balance) }}</span></li>
+                    </ul>
+                </div>
+                <button class="action-button" @click="closeApplication()">Logout</button>
+                <div class="sidebar-footer">Account Number: {{ accountNumber }}</div>
+            </div>
+            <div class="main-content">
+                <div class="money">
+                    <div class="manage-money">
+                        <div class="money-title">Withdraw</div>
+                        <label for="fromAccount">Account:</label>
+                        <select id="fromAccount" v-model="selectedMoneyAccount">
+                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                        </select>
+                        <label for="amount">Amount:</label>
+                        <input type="number" id="amount" v-model="selectedMoneyAmount" />
+                        <label for="money-reason">Reason:</label>
+                        <input type="text" id="money-reason" v-model="moneyReason" />
+                        <div class="card-buttons">
+                            <button class="action-button" @click="withdrawMoney">Withdraw</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ATM PIN Prompt -->
+        <div v-if="showPinPrompt" class="pin-prompt">
+            <div class="pin-title">🔐 Enter Your PIN</div>
+            <div class="pin-input">
+                <input type="password" v-model="enteredPin" placeholder="●●●●" readonly />
+            </div>
+           <div class="number-pad">
+    <button v-for="number in 9" :key="number" @click="appendNumber(number)">{{ number }}</button>
+    <button class="pad-zero" @click="appendNumber(0)">0</button>
+</div>
+            <div class="card-buttons">
+                <button class="action-button clear" @click="enteredPin = ''">Clear</button>
+                <button class="action-button submit" @click="pinPrompt(enteredPin)">Enter</button>
+            </div>
+        </div>
+    </div>
+</body>
+<script src="script.js"></script>
+</html>
